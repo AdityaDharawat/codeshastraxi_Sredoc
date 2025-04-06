@@ -50,7 +50,7 @@ const Detection = () => {
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+XLSX.utils.sheet_to_json(worksheet); // Process worksheet
 
         // Simulate analysis
         setTimeout(() => {
