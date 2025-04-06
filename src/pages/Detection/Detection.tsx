@@ -1,10 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import QRCode from 'qrcode';
-import { FiUpload, FiDownload, FiRefreshCw, FiMail, FiShare2, FiActivity, FiCheckCircle, FiMoreVertical } from 'react-icons/fi';
-import { saveAs } from 'file-saver';
-import jsPDF from 'jspdf';
+import { FiUpload, FiActivity, FiRefreshCw, FiDownload } from 'react-icons/fi';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
 
 interface AnalysisFeature {
   name: string;
@@ -15,648 +13,519 @@ interface AnalysisResults {
   hasAnomalies: boolean;
   confidence: number;
   features: AnalysisFeature[];
-  suspiciousTransactions?: any[];
-  summaryStats?: any;
-}
-
-interface FileData {
-  name: string;
-  size: number;
-  type: string;
-  lastModified: number;
+  summaryStats?: {
+    totalRecords: number;
+    anomaliesFound: number;
+    dataQualityScore: number;
+  };
+  anomalies?: {
+    description: string;
+    severity: 'low' | 'medium' | 'high';
+    recommendedAction: string;
+  }[];
+  comparison?: {
+    previousValue: string;
+    currentValue: string;
+    variance: string;
+  }[];
 }
 
 const Detection = () => {
   const [file, setFile] = useState<File | null>(null);
-  const [fileData, setFileData] = useState<FileData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [results, setResults] = useState<AnalysisResults | null>(null);
-  const [showQRCode, setShowQRCode] = useState(false);
-  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
-  const [verificationId, setVerificationId] = useState('');
-  const [showMoreOptions, setShowMoreOptions] = useState(false);
-  const [parsedData, setParsedData] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const toggleMoreOptions = () => {
-    setShowMoreOptions(!showMoreOptions);
-  };
-
-  // Generate QR code when results are available
-  useEffect(() => {
-    const generateQRCode = async () => {
-      if (results) {
-        const id = Math.random().toString(36).substring(2, 10).toUpperCase();
-        setVerificationId(id);
-        
-        try {
-          const url = await QRCode.toDataURL(
-            `https://sales-audit.example.com/check?id=${id}&result=${results.hasAnomalies ? 'anomalies' : 'clean'}`,
-            {
-              width: 300,
-              margin: 2,
-              color: {
-                dark: '#000000',
-                light: '#FFFFFF'
-              }
-            }
-          );
-          setQrCodeDataUrl(url);
-        } catch (err) {
-          console.error('Error generating QR code:', err);
-        }
-      }
-    };
-
-    generateQRCode();
-  }, [results]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
-      if (selectedFile.type === 'text/csv' || selectedFile.name.endsWith('.csv')) {
+      if (selectedFile.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+          selectedFile.name.endsWith('.xlsx')) {
         setFile(selectedFile);
-        setFileData({
-          name: selectedFile.name,
-          size: selectedFile.size,
-          type: selectedFile.type,
-          lastModified: selectedFile.lastModified
-        });
-        parseCSV(selectedFile);
+        analyzeFile(selectedFile);
       } else {
-        alert('Please upload a CSV file only.');
+        alert('Please upload an Excel file only.');
       }
     }
   };
 
-  const parseCSV = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
-      const workbook = XLSX.read(content, { type: 'binary' });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
-      setParsedData(jsonData);
-      analyzeFile(jsonData);
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const analyzeFile = async (data: any[]) => {
+  const analyzeFile = async (file: File) => {
     setIsAnalyzing(true);
 
     try {
-      // Simulate analysis delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Generate sample analysis results based on the data
-      const anomalyCount = Math.min(Math.floor(Math.random() * 5), data.length);
-      const suspiciousTransactions = anomalyCount > 0 
-        ? Array(anomalyCount).fill(0).map((_, i) => {
-            const randomIndex = Math.floor(Math.random() * data.length);
-            return {
-              ...data[randomIndex],
-              anomalyType: ['Amount Mismatch', 'Duplicate Transaction', 'Unusual Time', 'Suspicious Vendor'][Math.floor(Math.random() * 4)],
-              confidence: Math.floor(Math.random() * 30) + 70
-            };
-          })
-        : undefined;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-      const dataStats = {
-        totalTransactions: data.length,
-        totalAmount: data.reduce((sum, row) => sum + (row.amount || 0), 0),
-        averageTransaction: data.reduce((sum, row) => sum + (row.amount || 0), 0) / data.length,
-        dateRange: data.length > 0 
-          ? `${data[0].date} to ${data[data.length - 1].date}`
-          : 'N/A'
+        // Simulate analysis
+        setTimeout(() => {
+          const hasAnomalies = Math.random() > 0.5;
+          const confidence = Math.floor(Math.random() * 20) + 80;
+          
+          const analysisResults: AnalysisResults = {
+            hasAnomalies,
+            confidence,
+            features: [
+              { name: "Data Consistency", value: Math.floor(Math.random() * 20) + 80 },
+              { name: "Amount Validation", value: Math.floor(Math.random() * 20) + 80 },
+              { name: "Time Pattern Analysis", value: Math.floor(Math.random() * 20) + 80 },
+            ],
+            summaryStats: {
+              totalRecords: jsonData.length,
+              anomaliesFound: hasAnomalies ? Math.floor(Math.random() * 5) + 1 : 0,
+              dataQualityScore: Math.floor(Math.random() * 20) + 80,
+            },
+            anomalies: hasAnomalies ? [
+              {
+                description: "Inconsistent date formats detected",
+                severity: 'medium',
+                recommendedAction: "Standardize date formats across all records"
+              },
+              {
+                description: "Outlier values in sales amount",
+                severity: 'high',
+                recommendedAction: "Verify transactions above $10,000"
+              }
+            ] : undefined,
+            comparison: [
+              {
+                previousValue: "1,245 records",
+                currentValue: `${jsonData.length} records`,
+                variance: `${Math.round((jsonData.length - 1245)/1245 * 100)}%`
+              },
+              {
+                previousValue: "$245,678",
+                currentValue: `$${Math.round(jsonData.reduce((sum: number, row: any) => sum + (row.amount || 0), 0)}`,
+                variance: `${Math.round(Math.random() * 20 - 10)}%`
+              },
+              {
+                previousValue: "87% quality score",
+                currentValue: `${Math.floor(Math.random() * 20) + 80}% quality score`,
+                variance: `${Math.round(Math.random() * 10 - 5)}%`
+              }
+            ]
+          };
+          setResults(analysisResults);
+          setIsAnalyzing(false);
+        }, 2000);
       };
-
-      const analysisResults: AnalysisResults = {
-        hasAnomalies: anomalyCount > 0,
-        confidence: anomalyCount > 0 ? Math.floor(Math.random() * 20) + 80 : Math.floor(Math.random() * 10) + 90,
-        features: [
-          { name: "Data Consistency", value: Math.floor(Math.random() * 20) + 80 },
-          { name: "Amount Validation", value: Math.floor(Math.random() * 20) + 80 },
-          { name: "Time Pattern Analysis", value: Math.floor(Math.random() * 20) + 80 },
-          { name: "Vendor Verification", value: Math.floor(Math.random() * 20) + 80 }
-        ],
-        suspiciousTransactions,
-        summaryStats: dataStats
-      };
-
-      setResults(analysisResults);
+      reader.readAsArrayBuffer(file);
     } catch (error) {
-      console.error("Error analyzing file:", error);
-    } finally {
+      console.error('Error analyzing file:', error);
       setIsAnalyzing(false);
     }
   };
 
   const resetAnalysis = () => {
     setFile(null);
-    setFileData(null);
     setResults(null);
-    setParsedData([]);
-    setQrCodeDataUrl('');
-    setVerificationId('');
   };
 
-  const generatePDF = () => {
-    if (!results || !fileData) return;
+  const generatePDFReport = () => {
+    if (!results) return;
 
     const doc = new jsPDF();
-
-    // Add title
-    doc.setFontSize(20);
-    doc.text('Sales Data Audit Report', 105, 20, { align: 'center' });
-
-    // Add result
+    
+    // Title
+    doc.setFontSize(22);
+    doc.setTextColor(40, 53, 147);
+    doc.text('Excel Data Analysis Report', 105, 20, { align: 'center' });
+    
+    // Subtitle
+    doc.setFontSize(14);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated on ${new Date().toLocaleDateString()}`, 105, 28, { align: 'center' });
+    
+    // Divider
+    doc.setDrawColor(200, 200, 200);
+    doc.line(20, 35, 190, 35);
+    
+    // Summary Section
     doc.setFontSize(16);
-    doc.setTextColor(results.hasAnomalies ? '#ff0000' : '#00aa00');
-    doc.text(
-      results.hasAnomalies ? 'Potential Anomalies Detected' : 'Clean Sales Data',
-      105,
-      40,
-      { align: 'center' }
-    );
-
-    // Add confidence
-    doc.setFontSize(14);
-    doc.setTextColor('#000000');
-    doc.text(`Confidence: ${results.confidence}%`, 105, 50, { align: 'center' });
-
-    // Add file info
+    doc.setTextColor(40, 53, 147);
+    doc.text('Summary', 20, 45);
+    
     doc.setFontSize(12);
-    doc.text(`File Name: ${fileData.name}`, 20, 70);
-    doc.text(`File Size: ${(fileData.size / 1024).toFixed(2)} KB`, 20, 80);
-    doc.text(`Upload Date: ${new Date(fileData.lastModified).toLocaleString()}`, 20, 90);
-
-    // Add summary stats
+    doc.setTextColor(0, 0, 0);
+    
+    // Summary Stats
     if (results.summaryStats) {
-      doc.setFontSize(14);
-      doc.text('Summary Statistics', 20, 110);
-      doc.setFontSize(12);
-      doc.text(`Total Transactions: ${results.summaryStats.totalTransactions}`, 20, 120);
-      doc.text(`Total Amount: $${results.summaryStats.totalAmount.toFixed(2)}`, 20, 130);
-      doc.text(`Average Transaction: $${results.summaryStats.averageTransaction.toFixed(2)}`, 20, 140);
-      doc.text(`Date Range: ${results.summaryStats.dateRange}`, 20, 150);
+      doc.text(`Total Records Analyzed: ${results.summaryStats.totalRecords}`, 20, 55);
+      doc.text(`Anomalies Found: ${results.summaryStats.anomaliesFound}`, 20, 65);
+      doc.text(`Data Quality Score: ${results.summaryStats.dataQualityScore}%`, 20, 75);
     }
-
-    // Add features
+    
+    // Result
     doc.setFontSize(14);
-    doc.text('Audit Metrics', 20, 170);
-    let yPosition = 180;
+    doc.setTextColor(results.hasAnomalies ? 211, 47, 47 : 56, 142, 60);
+    doc.text(
+      results.hasAnomalies ? 'Potential Anomalies Detected' : 'No Significant Issues Found', 
+      20, 
+      90
+    );
+    
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Confidence Level: ${results.confidence}%`, 20, 100);
+    
+    // Features
+    doc.setFontSize(16);
+    doc.setTextColor(40, 53, 147);
+    doc.text('Analysis Metrics', 20, 115);
+    
+    doc.setFontSize(12);
+    let yPos = 125;
     results.features.forEach(feature => {
-      doc.text(`${feature.name}: ${feature.value}%`, 20, yPosition);
-      doc.setFillColor('#007bff');
-      doc.rect(80, yPosition - 4, feature.value * 1.2, 5, 'F');
-      yPosition += 10;
-    });
-
-    // Add suspicious transactions if any
-    if (results.hasAnomalies && results.suspiciousTransactions) {
-      doc.addPage();
-      doc.setFontSize(16);
-      doc.text('Suspicious Transactions', 20, 20);
-      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.text(`${feature.name}:`, 20, yPos);
+      doc.text(`${feature.value}%`, 180, yPos, { align: 'right' });
       
-      let yPos = 30;
-      results.suspiciousTransactions.forEach((txn, index) => {
-        if (yPos > 280) {
-          doc.addPage();
-          yPos = 20;
-        }
+      // Progress bar
+      doc.setFillColor(200, 200, 200);
+      doc.rect(50, yPos - 3, 120, 5, 'F');
+      doc.setFillColor(
+        feature.value > 85 ? 56 : feature.value > 70 ? 255 : 211,
+        feature.value > 85 ? 142 : feature.value > 70 ? 193 : 47,
+        feature.value > 85 ? 60 : feature.value > 70 ? 7 : 47
+      );
+      doc.rect(50, yPos - 3, feature.value * 1.2, 5, 'F');
+      
+      yPos += 10;
+    });
+    
+    // Add new page for detailed findings
+    doc.addPage();
+    
+    // Comparison Section
+    doc.setFontSize(16);
+    doc.setTextColor(40, 53, 147);
+    doc.text('Data Comparison', 20, 20);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    
+    if (results.comparison) {
+      // Table header
+      doc.setFillColor(225, 229, 242);
+      doc.rect(20, 30, 170, 10, 'F');
+      doc.setTextColor(40, 53, 147);
+      doc.text('Metric', 25, 37);
+      doc.text('Previous', 80, 37);
+      doc.text('Current', 120, 37);
+      doc.text('Variance', 160, 37, { align: 'right' });
+      
+      // Table rows
+      doc.setTextColor(0, 0, 0);
+      let tableY = 40;
+      results.comparison.forEach((item, index) => {
+        doc.text(item.previousValue, 80, tableY + (index * 10) + 10);
+        doc.text(item.currentValue, 120, tableY + (index * 10) + 10);
         
-        doc.setFontSize(12);
-        doc.setTextColor('#ff0000');
-        doc.text(`Transaction ${index + 1}: ${txn.anomalyType} (${txn.confidence}% confidence)`, 20, yPos);
-        doc.setFontSize(10);
-        doc.setTextColor('#000000');
+        // Color variance based on value
+        const varianceNum = parseFloat(item.variance);
+        doc.setTextColor(
+          varianceNum > 0 ? 56 : varianceNum < 0 ? 211 : 0,
+          varianceNum > 0 ? 142 : varianceNum < 0 ? 47 : 0,
+          varianceNum > 0 ? 60 : varianceNum < 0 ? 47 : 0
+        );
+        doc.text(
+          varianceNum > 0 ? `+${item.variance}` : item.variance, 
+          160, 
+          tableY + (index * 10) + 10, 
+          { align: 'right' }
+        );
         
-        yPos += 10;
-        Object.entries(txn).forEach(([key, value]) => {
-          if (key !== 'anomalyType' && key !== 'confidence') {
-            doc.text(`${key}: ${value}`, 25, yPos);
-            yPos += 7;
-          }
-        });
-        yPos += 10;
+        doc.setTextColor(0, 0, 0);
+        doc.text(
+          index === 0 ? 'Total Records' : 
+          index === 1 ? 'Total Amount' : 
+          'Data Quality', 
+          25, 
+          tableY + (index * 10) + 10
+        );
       });
     }
-
-    // Add verification info
-    doc.addPage();
-    doc.setFontSize(16);
-    doc.text('Verification Information', 105, 20, { align: 'center' });
-    doc.setFontSize(12);
-    doc.text(`Verification ID: ${verificationId}`, 20, 40);
-    doc.text(`Date: ${new Date().toLocaleString()}`, 20, 50);
-
-    // Convert to Blob and use saveAs
-    const pdfBlob = doc.output('blob');
-    saveAs(pdfBlob, `sales_audit_report_${verificationId}.pdf`);
-  };
-
-  const shareViaEmail = () => {
-    if (!results || !fileData) return;
-
-    const subject = `Sales Audit Report - ${verificationId}`;
-    const body = `Dear Recipient,\n\n` +
-      `Please find below the sales data audit results:\n\n` +
-      `File Name: ${fileData.name}\n` +
-      `Status: ${results.hasAnomalies ? 'Potential Anomalies Detected' : 'Clean Data'}\n` +
-      `Confidence Level: ${results.confidence}%\n` +
-      `Verification ID: ${verificationId}\n\n` +
-      `You can verify this result by scanning the attached QR code or visiting:\n` +
-      `https://sales-audit.example.com/check?id=${verificationId}\n\n` +
-      `Best regards,\n` +
-      `Sales Audit Team`;
-
-    const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = mailtoLink;
-  };
-
-  const shareViaGmail = () => {
-    if (!results || !fileData) return;
-
-    const subject = `Sales Audit Report - ${verificationId}`;
-    const body = `Dear Recipient,%0A%0A` +
-      `Please find below the sales data audit results:%0A%0A` +
-      `File Name: ${fileData.name}%0A` +
-      `Status: ${results.hasAnomalies ? 'Potential Anomalies Detected' : 'Clean Data'}%0A` +
-      `Confidence Level: ${results.confidence}%%0A` +
-      `Verification ID: ${verificationId}%0A%0A` +
-      `You can verify this result by scanning the attached QR code or visiting:%0A` +
-      `https://sales-audit.example.com/check?id=${verificationId}%0A%0A` +
-      `Best regards,%0A` +
-      `Sales Audit Team`;
-
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${body}`, '_blank');
-  };
-
-  const downloadReport = () => {
-    generatePDF();
-  };
-
-  const toggleQRCode = () => {
-    setShowQRCode(!showQRCode);
+    
+    // Anomalies Section
+    if (results.hasAnomalies && results.anomalies) {
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.setTextColor(40, 53, 147);
+      doc.text('Anomaly Details', 20, 20);
+      
+      doc.setFontSize(12);
+      let anomalyY = 30;
+      results.anomalies.forEach((anomaly, index) => {
+        // Severity indicator
+        doc.setFillColor(
+          anomaly.severity === 'high' ? 211 : anomaly.severity === 'medium' ? 255 : 255,
+          anomaly.severity === 'high' ? 47 : anomaly.severity === 'medium' ? 193 : 236,
+          anomaly.severity === 'high' ? 47 : anomaly.severity === 'medium' ? 7 : 64
+        );
+        doc.roundedRect(20, anomalyY, 170, 30, 3, 3, 'F');
+        
+        // Anomaly text
+        doc.setTextColor(0, 0, 0);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${index + 1}. ${anomaly.description}`, 25, anomalyY + 8);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Severity: ${anomaly.severity}`, 25, anomalyY + 16);
+        doc.text(`Action: ${anomaly.recommendedAction}`, 25, anomalyY + 24);
+        
+        anomalyY += 35;
+      });
+    }
+    
+    // Save the PDF
+    doc.save(`data_analysis_report_${new Date().toISOString().slice(0,10)}.pdf`);
   };
 
   return (
-    <div className="container mx-auto px-4 pt-28 py-12 relative bg-gray-50">
-      <motion.h1 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="text-3xl md:text-4xl font-bold mb-8 text-gray-800"
-      >
-        Sales Data Audit
-      </motion.h1>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 text-gray-800 flex items-center justify-center px-4 py-12">
+      <div className="container mx-auto max-w-4xl bg-white rounded-2xl shadow-xl p-8 md:p-12">
+        <motion.h1
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="text-3xl md:text-4xl font-bold mb-8 text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent"
+        >
+          Excel Data Analysis
+        </motion.h1>
 
-      <AnimatePresence mode="wait">
-        {!file && !results && (
-          <motion.div
-            key="upload"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.3 }}
-            className="bg-white rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-200"
-          >
-            <div 
-              className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center cursor-pointer hover:border-blue-500 transition-all duration-300"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <FiUpload className="mx-auto w-12 h-12 text-gray-400 mb-4" />
-              <h3 className="text-xl font-semibold mb-2 text-gray-800">Upload Sales Data</h3>
-              <p className="text-gray-500 mb-4">Please upload a CSV file containing sales transactions</p>
-              <button className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors">
-                Select CSV File
-              </button>
-              <input 
-                type="file" 
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                accept=".csv"
-                className="hidden" 
-              />
-            </div>
-          </motion.div>
-        )}
-
-        {isAnalyzing && (
-          <motion.div
-            key="analyzing"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.4 }}
-            className="bg-white rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-200 text-center"
-          >
-            <div className="mb-6">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                className="relative w-24 h-24 mx-auto mb-4"
-              >
-                <div className="absolute inset-0 rounded-full bg-blue-100 opacity-75"></div>
-                <div className="absolute inset-2 rounded-full bg-blue-50 flex items-center justify-center">
-                  <FiActivity className="w-12 h-12 text-blue-500" />
-                </div>
-              </motion.div>
-              <h3 className="text-2xl font-semibold mb-2 text-gray-800">Auditing Sales Data</h3>
-              <p className="text-gray-500">Analyzing transactions for anomalies and patterns...</p>
-            </div>
-
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <motion.div 
-                className="bg-blue-500 h-2.5 rounded-full" 
-                initial={{ width: 0 }}
-                animate={{ width: "100%" }}
-                transition={{ duration: 3, ease: "easeInOut" }}
-              />
-            </div>
-          </motion.div>
-        )}
-
-        {results && (
-          <motion.div
-            key="results"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="bg-white rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-200"
-          >
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
-              <div>
-                <h3 className="text-2xl font-semibold text-gray-800">Audit Results</h3>
-                <p className="text-gray-500">Detailed analysis of sales data</p>
-              </div>
-              <div className="flex gap-2 mt-4 md:mt-0">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={toggleQRCode}
-                  className="flex items-center px-4 py-2 bg-green-500 hover:bg-green-600 rounded-lg text-sm font-medium transition-colors text-white"
-                >
-                  <FiCheckCircle className="mr-2" /> Verify Report
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={resetAnalysis}
-                  className="flex items-center px-4 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg text-sm font-medium transition-colors text-gray-800"
-                >
-                  <FiRefreshCw className="mr-2" /> Audit Another
-                </motion.button>
-              </div>
-            </div>
-
+        <AnimatePresence mode="wait">
+          {!file && !results && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className={`p-6 rounded-xl mb-8 ${results.hasAnomalies ? 'bg-red-100 border-red-500' : 'bg-green-100 border-green-500'} border`}
+              key="upload"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.3 }}
+              className="bg-gray-50 rounded-xl shadow-sm p-8 md:p-12 text-center border border-gray-200"
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-lg font-semibold text-gray-800">
-                    {results.hasAnomalies ? 'Potential Anomalies Detected' : 'Clean Sales Data'}
-                  </h4>
-                  <p className="text-sm text-gray-500">
-                    Confidence: {results.confidence}%
-                  </p>
-                </div>
-                <div className={`px-4 py-2 rounded-full text-sm font-medium ${results.hasAnomalies ? 'bg-red-500 text-white' : 'bg-green-500 text-white'}`}>
-                  {results.hasAnomalies ? 'Review Needed' : 'No Issues Found'}
-                </div>
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-xl p-12 cursor-pointer hover:border-blue-500 transition-all duration-300"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <FiUpload className="mx-auto w-12 h-12 text-gray-400 mb-4" />
+                <h3 className="text-xl font-semibold mb-2">Upload Excel File</h3>
+                <p className="text-gray-500 mb-4">Please upload an Excel file (.xlsx) for analysis</p>
+                <button className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-purple-600 transition-all shadow-md">
+                  Select File
+                </button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept=".xlsx"
+                  className="hidden"
+                />
               </div>
             </motion.div>
+          )}
 
-            {results.summaryStats && (
-              <div className="mb-8 bg-gray-100 rounded-lg p-6">
-                <h4 className="text-lg font-semibold mb-4 text-gray-800">Summary Statistics</h4>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="bg-white p-4 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-500">Total Transactions</p>
-                    <p className="text-2xl font-bold text-gray-800">{results.summaryStats.totalTransactions}</p>
-                  </div>
-                  <div className="bg-white p-4 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-500">Total Amount</p>
-                    <p className="text-2xl font-bold text-gray-800">${results.summaryStats.totalAmount.toFixed(2)}</p>
-                  </div>
-                  <div className="bg-white p-4 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-500">Average Transaction</p>
-                    <p className="text-2xl font-bold text-gray-800">${results.summaryStats.averageTransaction.toFixed(2)}</p>
-                  </div>
-                  <div className="bg-white p-4 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-500">Date Range</p>
-                    <p className="text-xl font-bold text-gray-800">{results.summaryStats.dateRange}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="grid md:grid-cols-2 gap-6 mb-8">
-              {results.features.map((feature, index) => (
+          {isAnalyzing && (
+            <motion.div
+              key="analyzing"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4 }}
+              className="bg-gray-50 rounded-xl shadow-sm p-8 md:p-12 text-center border border-gray-200"
+            >
+              <div className="mb-6">
                 <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="bg-gray-100 rounded-lg p-4"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                  className="relative w-24 h-24 mx-auto mb-4"
                 >
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-500">{feature.name}</span>
-                    <span className="text-sm font-semibold text-gray-800">{feature.value}%</span>
-                  </div>
-                  <div className="w-full bg-gray-300 rounded-full h-2">
-                    <motion.div 
-                      className={`h-2 rounded-full ${feature.value > 85 ? 'bg-green-500' : feature.value > 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${feature.value}%` }}
-                      transition={{ duration: 0.8, delay: index * 0.1 + 0.3 }}
-                    />
+                  <div className="absolute inset-0 rounded-full bg-blue-100 opacity-75"></div>
+                  <div className="absolute inset-2 rounded-full bg-blue-50 flex items-center justify-center">
+                    <FiActivity className="w-12 h-12 text-blue-500" />
                   </div>
                 </motion.div>
-              ))}
-            </div>
-
-            {results.hasAnomalies && results.suspiciousTransactions && (
-              <div className="mb-8 bg-red-50 rounded-lg p-6 border border-red-200">
-                <h4 className="text-lg font-semibold mb-4 text-gray-800">Suspicious Transactions</h4>
-                <div className="space-y-4">
-                  {results.suspiciousTransactions.map((txn, index) => (
-                    <div key={index} className="bg-white p-4 rounded-lg border border-red-100">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium text-red-600">{txn.anomalyType}</p>
-                          <p className="text-sm text-gray-500">Confidence: {txn.confidence}%</p>
-                        </div>
-                        <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
-                          Review
-                        </span>
-                      </div>
-                      <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                        {Object.entries(txn).map(([key, value]) => {
-                          if (key !== 'anomalyType' && key !== 'confidence') {
-                            return (
-                              <div key={key} className="truncate">
-                                <span className="text-gray-500">{key}:</span> {value}
-                              </div>
-                            );
-                          }
-                          return null;
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="border-t border-gray-300 pt-6">
-              <h4 className="text-lg font-semibold mb-4 text-gray-800">Recommended Actions</h4>
-              <div className="space-y-3">
-                <p className="text-gray-500">
-                  {results.hasAnomalies ? (
-                    <>
-                      <span className="font-medium">Warning:</span> This sales data contains potential anomalies that require review. 
-                      We recommend investigating the flagged transactions and verifying with original documentation.
-                    </>
-                  ) : (
-                    <>
-                      This sales data appears consistent with no significant anomalies detected. 
-                      Routine monitoring is recommended to maintain data integrity.
-                    </>
-                  )}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-8 flex flex-wrap gap-4">
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={downloadReport}
-                className="flex items-center px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-all"
-              >
-                <FiDownload className="mr-2" /> Download PDF Report
-              </motion.button>
-
-              <div className="relative group">
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  className="flex items-center px-6 py-3 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium transition-all text-gray-800"
-                >
-                  <FiMail className="mr-2" /> Share Report
-                </motion.button>
-                <div className="absolute left-0 mt-2 w-48 bg-white rounded-lg shadow-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  <button 
-                    onClick={shareViaEmail}
-                    className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100 rounded-t-lg"
-                  >
-                    Default Email
-                  </button>
-                  <button 
-                    onClick={shareViaGmail}
-                    className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100 rounded-b-lg"
-                  >
-                    Gmail
-                  </button>
-                </div>
+                <h3 className="text-2xl font-semibold mb-2">Analyzing Excel Data</h3>
+                <p className="text-gray-500">Processing the uploaded file for insights...</p>
               </div>
 
-              <div className="relative">
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={toggleMoreOptions}
-                  className="flex items-center px-4 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium transition-all text-gray-800"
-                >
-                  <FiMoreVertical className="mr-2" /> More Options
-                </motion.button>
-                <AnimatePresence>
-                  {showMoreOptions && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.2 }}
-                      className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg z-10"
-                    >
-                      <button
-                        onClick={shareViaEmail}
-                        className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100 rounded-t-lg"
-                      >
-                        Share via Email
-                      </button>
-                      <button
-                        onClick={shareViaGmail}
-                        className="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100 rounded-b-lg"
-                      >
-                        Share via Gmail
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* QR Code Modal */}
-      <AnimatePresence>
-        {showQRCode && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative"
-            >
-              <div className="absolute top-4 right-4">
-                <button 
-                  onClick={toggleQRCode}
-                  className="text-gray-400 hover:text-gray-800"
-                >
-                  ✕
-                </button>
-              </div>
-              <h3 className="text-2xl font-bold mb-6 text-gray-800 text-center">Verify Report</h3>
-              <div className="flex flex-col items-center">
-                <div className="bg-gray-100 p-4 rounded-lg mb-6 flex justify-center">
-                  {qrCodeDataUrl ? (
-                    <img 
-                      src={qrCodeDataUrl} 
-                      alt="Verification QR Code"
-                      className="w-64 h-64"
-                    />
-                  ) : (
-                    <div className="w-64 h-64 flex items-center justify-center bg-gray-200">
-                      <p className="text-gray-500">Generating QR code...</p>
-                    </div>
-                  )}
-                </div>
-                <p className="text-gray-500 text-center mb-6 max-w-md">
-                  Scan this QR code with your mobile device to verify this audit report.
-                </p>
-                <div className="text-xs text-gray-400 text-center">
-                  Verification ID: {verificationId}
-                </div>
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <motion.div
+                  className="bg-gradient-to-r from-blue-500 to-purple-500 h-2.5 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: "100%" }}
+                  transition={{ duration: 3, ease: "easeInOut" }}
+                />
               </div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+
+          {results && (
+            <motion.div
+              key="results"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="bg-gray-50 rounded-xl shadow-sm p-8 md:p-12 border border-gray-200"
+            >
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
+                <div>
+                  <h3 className="text-2xl font-semibold">Analysis Results</h3>
+                  <p className="text-gray-500">Detailed insights from the uploaded Excel file</p>
+                </div>
+                <div className="flex gap-2 mt-4 md:mt-0">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={generatePDFReport}
+                    className="flex items-center px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-purple-600 transition-all shadow-md"
+                  >
+                    <FiDownload className="mr-2" /> Download Report
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={resetAnalysis}
+                    className="flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium transition-colors text-gray-800"
+                  >
+                    <FiRefreshCw className="mr-2" /> Analyze Another
+                  </motion.button>
+                </div>
+              </div>
+
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className={`p-6 rounded-xl mb-8 ${results.hasAnomalies ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'} border`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-lg font-semibold">
+                      {results.hasAnomalies ? 'Potential Anomalies Detected' : 'Clean Data'}
+                    </h4>
+                    <p className="text-sm text-gray-500">
+                      Confidence: {results.confidence}%
+                    </p>
+                  </div>
+                  <div className={`px-4 py-2 rounded-full text-sm font-medium ${results.hasAnomalies ? 'bg-red-500 text-white' : 'bg-green-500 text-white'}`}>
+                    {results.hasAnomalies ? 'Review Needed' : 'No Issues Found'}
+                  </div>
+                </div>
+              </motion.div>
+
+              {results.summaryStats && (
+                <div className="grid md:grid-cols-3 gap-4 mb-8">
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                    <p className="text-sm text-gray-500">Total Records</p>
+                    <p className="text-2xl font-bold">{results.summaryStats.totalRecords}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                    <p className="text-sm text-gray-500">Anomalies Found</p>
+                    <p className="text-2xl font-bold">{results.summaryStats.anomaliesFound}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                    <p className="text-sm text-gray-500">Data Quality Score</p>
+                    <p className="text-2xl font-bold">{results.summaryStats.dataQualityScore}%</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-4 mb-8">
+                <h4 className="text-lg font-semibold">Analysis Metrics</h4>
+                {results.features.map((feature, index) => (
+                  <div key={index} className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">{feature.name}</span>
+                      <span className="text-sm font-semibold">{feature.value}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className={`h-2 rounded-full ${feature.value > 85 ? 'bg-green-500' : feature.value > 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                        style={{ width: `${feature.value}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {results.comparison && (
+                <div className="mb-8">
+                  <h4 className="text-lg font-semibold mb-4">Data Comparison</h4>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Metric</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Previous</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variance</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {results.comparison.map((item, index) => {
+                          const varianceNum = parseFloat(item.variance);
+                          return (
+                            <tr key={index}>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">
+                                {index === 0 ? 'Total Records' : index === 1 ? 'Total Amount' : 'Data Quality'}
+                              </td>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">{item.previousValue}</td>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">{item.currentValue}</td>
+                              <td className={`px-4 py-2 whitespace-nowrap text-sm font-medium ${
+                                varianceNum > 0 ? 'text-green-600' : varianceNum < 0 ? 'text-red-600' : 'text-gray-600'
+                              }`}>
+                                {varianceNum > 0 ? `+${item.variance}` : item.variance}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {results.hasAnomalies && results.anomalies && (
+                <div className="bg-red-50 rounded-lg p-6 border border-red-200">
+                  <h4 className="text-lg font-semibold mb-4 text-red-800">Anomaly Details</h4>
+                  <div className="space-y-4">
+                    {results.anomalies.map((anomaly, index) => (
+                      <div 
+                        key={index} 
+                        className={`p-4 rounded-lg border ${
+                          anomaly.severity === 'high' ? 'bg-red-100 border-red-300' :
+                          anomaly.severity === 'medium' ? 'bg-yellow-100 border-yellow-300' :
+                          'bg-blue-100 border-blue-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium">{index + 1}. {anomaly.description}</p>
+                            <p className="text-sm text-gray-600 mt-1">Severity: {anomaly.severity}</p>
+                          </div>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            anomaly.severity === 'high' ? 'bg-red-500 text-white' :
+                            anomaly.severity === 'medium' ? 'bg-yellow-500 text-white' :
+                            'bg-blue-500 text-white'
+                          }`}>
+                            {anomaly.severity}
+                          </span>
+                        </div>
+                        <p className="text-sm mt-2">
+                          <span className="font-medium">Recommended Action:</span> {anomaly.recommendedAction}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 };
